@@ -83,6 +83,7 @@ rm(list.of.packages,new.packages)
 ```{r library loading}
 # Load libraries 
 library(tidyverse)
+library(caret)
 library(ggthemes)
 library(data.table)
 library(corrplot)
@@ -437,16 +438,22 @@ mg_mat <- mg_df %>%
                       values_fill = 0,values_fn = mean)
 #create correlation plot
 col <- colorRampPalette(c("#BB4444", "#EE9988", "#FFFFFF", "#77AADD", "#4477AA"))
-cor(mg_mat) %>% 
-  corrplot(method = "col",
-                     col=col(200),  
-                     type="upper", 
-                     order="hclust",
-                     addCoef.col = "black", # Add coefficient of correlation
-                     addCoefasPercent = T,  # Display coefficient in percentage
-                     tl.col="black", tl.srt=45, #Text label color and rotation
-                     diag=FALSE
-)
+cor(mg_df) %>% 
+    corrplot::corrplot(method = "col",
+                       col=col(200),  
+                       type="upper", 
+                       order="hclust",
+                       addCoef.col = "black", # Add coefficient of correlation
+                       addCoefasPercent = T,  # Display coefficient in percentage
+                       tl.col="black", tl.srt=45, #Text label color and rotation
+                       diag=FALSE,
+                       title = "Correlation Matrix",
+                       p.mat = res1$p,
+                       insig = "blank",
+                       sig.level = .05,
+                       number.cex = .8,
+                       mar = c(1,1,3,1)
+    )
 ```
     
 ### timestamp    
@@ -694,11 +701,11 @@ b_i %>% left_join(movie_titles, by="movieId") %>%
 
 ```{r regularization}
 # Define a set of lambdas to tune
-lambdas <- seq(0, 10, 0.25)
+lambdas <- seq(0, 6, 0.25)
+ mu <- mean(train_set$rating)
+
 # Tune the lambdas using regularization function
 regularization <- sapply(lambdas, function(l){
-  
-  mu <- mean(train_set$rating)
  
   b_i <- train_set %>% 
     group_by(movieId) %>%
@@ -736,7 +743,6 @@ Now that we have found the optimal $\lambda$ which minimizes the RMSE, we apply 
 
 ```{r}
 # Calculate the movie and user effects with the best lambda (parameter) 
-mu <- mean(train_set$rating)
 
 # Movie effect (bi)
 bi_reg <- train_set %>% 
@@ -751,8 +757,8 @@ bu_reg <- train_set %>%
 
 # Genres Effect
 bg_reg <- train_set %>%
-  left_join(b_i, by = 'movieId') %>%
-  left_join(b_u, by = "userId") %>%
+  left_join(bi_reg, by = 'movieId') %>%
+  left_join(bu_reg, by = "userId") %>%
   group_by(genres) %>% 
   summarise(b_g = sum(rating - b_i - b_u -mu)/(n()+lambda))
 
@@ -819,22 +825,22 @@ bi_fin <- edx %>%
 
 # User effect (bu)
 bu_fin <- edx %>% 
-  left_join(bi_reg, by="movieId") %>%
+  left_join(bi_fin, by="movieId") %>%
   group_by(userId) %>%
   summarize(b_u = sum(rating - b_i - mu)/(n()+lambda))
 
 # Genres Effect
 bg_fin <- edx %>%
-  left_join(b_i, by = 'movieId') %>%
-  left_join(b_u, by = "userId") %>%
+  left_join(bi_fin, by = 'movieId') %>%
+  left_join(bu_fin, by = "userId") %>%
   group_by(genres) %>% 
   summarise(b_g = sum(rating - b_i - b_u -mu)/(n()+lambda))
 
 # Prediction with regularized bi and bu 
 y_hat_fin <- validation %>% 
-  left_join(bi_reg, by = "movieId") %>%
-  left_join(bu_reg, by = "userId") %>%
-  left_join(bg_reg, by = "genres") %>% 
+  left_join(bi_fin, by = "movieId") %>%
+  left_join(bu_fin, by = "userId") %>%
+  left_join(bg_fin, by = "genres") %>% 
   mutate(pred = mu + b_i + b_u + b_g) %>%
   pull(pred)
 # Update results table with regularized movie + user effect
